@@ -1,41 +1,46 @@
 # the core predictor classes for gdrn
+import csv
+import os
 import os.path as osp
 import sys
+from contextlib import ExitStack
+from types import SimpleNamespace
+
+import cv2
+import torch
+import torchvision
+from core.utils.my_checkpoint import MyCheckpointer
+from det.yolox.data.data_augment import ValTransform
+from det.yolox.engine.yolox_setup import default_yolox_setup
+from det.yolox.engine.yolox_trainer import YOLOX_DefaultTrainer
+from det.yolox.exp import get_exp
+from det.yolox.utils import fuse_model, get_model_info, postprocess, vis
+from lib.utils.time_utils import get_time_str
+from loguru import logger
+from setproctitle import setproctitle
+from torch import nn
+
+from detectron2.config import LazyConfig
+from detectron2.evaluation import inference_context
+
 cur_dir = osp.dirname(osp.abspath(__file__))
 PROJ_ROOT = osp.normpath(osp.join(cur_dir, "../../.."))
 sys.path.insert(0, PROJ_ROOT)
 
-import torch
-import cv2
-from torch import nn
-import torchvision
-
-from det.yolox.exp import get_exp
-from det.yolox.utils import get_model_info, fuse_model, postprocess, vis
-from det.yolox.engine.yolox_setup import default_yolox_setup
-from det.yolox.engine.yolox_trainer import YOLOX_DefaultTrainer
-from det.yolox.data.data_augment import ValTransform
-
-from lib.utils.time_utils import get_time_str
-from core.utils.my_checkpoint import MyCheckpointer
-
-from detectron2.config import LazyConfig
-from detectron2.evaluation import inference_context
-from setproctitle import setproctitle
-from types import SimpleNamespace
-from contextlib import ExitStack
-from loguru import logger
 
 class YoloPredictor():
 
     def __init__(self, exp_name="yolox-x",
-                       config_file_path=osp.join(PROJ_ROOT,"configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
-                       ckpt_file_path=osp.join(PROJ_ROOT,"output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/model_final.pth"),
-                       fuse=True,
-                       fp16=False):
+                 config_file_path=osp.join(
+                     PROJ_ROOT, "configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
+                 ckpt_file_path=osp.join(
+                     PROJ_ROOT, "output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/model_final.pth"),
+                 fuse=True,
+                 fp16=False):
         self.exp = get_exp(None, exp_name)
         self.model = self.exp.get_model()
-        logger.info("Model Summary: {}".format(get_model_info(self.model, self.exp.test_size)))
+        logger.info("Model Summary: {}".format(
+            get_model_info(self.model, self.exp.test_size)))
         self.model.cuda()
 
         logger.info("loading checkpoint")
@@ -98,11 +103,14 @@ class YoloPredictor():
                 # logger.warn(f"image_pred.size: {image_pred.size(0)}")
                 continue
             # Get score and class with highest confidence
-            class_conf, class_pred = torch.max(image_pred[:, 5: 5 + num_classes], 1, keepdim=True)
+            class_conf, class_pred = torch.max(
+                image_pred[:, 5: 5 + num_classes], 1, keepdim=True)
 
-            conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= conf_thre).squeeze()
+            conf_mask = (image_pred[:, 4] *
+                         class_conf.squeeze() >= conf_thre).squeeze()
             # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
-            detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
+            detections = torch.cat(
+                (image_pred[:, :5], class_conf, class_pred.float()), 1)
             detections = detections[conf_mask]
             if keep_single_instance:
                 instance_detections = torch.rand(num_classes, 7)
@@ -132,7 +140,8 @@ class YoloPredictor():
                 )
 
             detections = detections[nms_out_index]
-            detections = torch.tensor(detections[detections[:, 6].argsort()])
+            detections = detections[detections[:,
+                                               6].argsort()].clone().detach()
             if output[i] is None:
                 output[i] = detections
             else:
@@ -162,23 +171,44 @@ class YoloPredictor():
                 self.model = self.model.half()
             outputs = self.model(img, cfg=self.cfg)
             outputs = self.postprocess(outputs["det_preds"],
-                                  self.cfg.num_classes,
-                                  self.cfg.conf_thr,
-                                  self.cfg.nms_thr,
-                                  class_agnostic=True,
-                                  keep_single_instance=True)
+                                       self.cfg.num_classes,
+                                       self.cfg.conf_thr,
+                                       self.cfg.nms_thr,
+                                       class_agnostic=True,
+                                       keep_single_instance=True)
 
         return outputs
 
+
 if __name__ == "__main__":
     predictor = YoloPredictor(
-                       exp_name="yolox-x",
-                       config_file_path=osp.join(PROJ_ROOT,"configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
-                       ckpt_file_path=osp.join(PROJ_ROOT,"output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/model_final.pth"),
-                       fuse=True,
-                       fp16=False
-                       )
-    img_path = osp.join(PROJ_ROOT,"datasets/BOP_DATASETS/lmo/test/000001/rgb/000000.jpg")
+        exp_name="yolox-x",
+        config_file_path=osp.join(
+            PROJ_ROOT, "configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
+        ckpt_file_path=osp.join(
+            PROJ_ROOT, "output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/model_final.pth"),
+        fuse=True,
+        fp16=False
+    )
+    rgb_path = "datasets/BOP_DATASETS/lmo/test/000002/rgb/000003.png"
+    img_path = osp.join(
+        PROJ_ROOT, rgb_path)
+    rgb_path_split = rgb_path.split('/')
+    scene_id = int(rgb_path_split[4])
+    image_id = int(rgb_path_split[6].split('.')[0])
     img = cv2.imread(img_path)
     result = predictor.inference(img)
-    predictor.visual_yolo(result[0], img, ["cls_name_1", "cls_name_2"])
+    if not osp.exists(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4])):
+        os.makedirs(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4]))
+    with open(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4] +'/yolox_predictor_output_' + rgb_path_split[6].split('.')[0] + '.csv'), 'w') as csv_output_file:
+        writer = csv.writer(csv_output_file)
+        writer.writerow(['scene id', 'image id', 'x1', 'y1', 'x2', 'y2',
+                        'object confidence', 'class confidence', 'object prediction'])
+        for item in result:
+            for prediction_data in item:
+                prediction_data = prediction_data.tolist()
+                prediction_data[:0] = [scene_id, image_id]
+                writer.writerow(prediction_data)
+    predictor.visual_yolo(result[0], img, ["cls_name_1", "cls_name_2", "cls_name_3", "cls_name_4",
+                                           "cls_name_5", "cls_name_6", "cls_name_7", "cls_name_8", "cls_name_9", "cls_name_10", "cls_name_11",
+                                           "cls_name_12", "cls_name_13", "cls_name_14", "cls_name_15"])
