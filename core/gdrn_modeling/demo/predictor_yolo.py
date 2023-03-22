@@ -199,8 +199,9 @@ if __name__ == "__main__":
     img = cv2.imread(img_path)
     result = predictor.inference(img)
     if not osp.exists(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4])):
-        os.makedirs(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4]))
-    with open(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4] +'/yolox_predictor_output_' + rgb_path_split[6].split('.')[0] + '.csv'), 'w') as csv_output_file:
+        os.makedirs(osp.join(
+            PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4]))
+    with open(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4] + '/yolox_predictor_output_' + rgb_path_split[6].split('.')[0] + '.csv'), 'w') as csv_output_file:
         writer = csv.writer(csv_output_file)
         writer.writerow(['scene id', 'image id', 'x1', 'y1', 'x2', 'y2',
                         'object confidence', 'class confidence', 'object prediction'])
@@ -209,6 +210,5 @@ if __name__ == "__main__":
                 prediction_data = prediction_data.tolist()
                 prediction_data[:0] = [scene_id, image_id]
                 writer.writerow(prediction_data)
-    predictor.visual_yolo(result[0], img, ["cls_name_1", "cls_name_2", "cls_name_3", "cls_name_4",
-                                           "cls_name_5", "cls_name_6", "cls_name_7", "cls_name_8", "cls_name_9", "cls_name_10", "cls_name_11",
-                                           "cls_name_12", "cls_name_13", "cls_name_14", "cls_name_15"])
+    predictor.visual_yolo(result[0], img, ["cls_name_1", "cls_name_5", "cls_name_6", "cls_name_8",
+                                           "cls_name_9", "cls_name_10", "cls_name_11", "cls_name_12"])
