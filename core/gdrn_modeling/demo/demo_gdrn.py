@@ -1,4 +1,5 @@
 # inference with detector, gdrn, and refiner
+import csv
 import os.path as osp
 import sys
 cur_dir = osp.dirname(osp.abspath(__file__))
@@ -43,7 +44,7 @@ def get_image_list(rgb_images_path, depth_images_path=None):
 
 
 if __name__ == "__main__":
-    image_paths = get_image_list(osp.join(PROJ_ROOT,"datasets/BOP_DATASETS/lmo/test/000001/rgb"), osp.join(PROJ_ROOT,"datasets/BOP_DATASETS/lmo/test/000001/depth"))
+    image_paths = get_image_list(osp.join(PROJ_ROOT,"datasets/debug_data/lmo/test/000002/rgb"), osp.join(PROJ_ROOT,"datasets/debug_data/lmo/test/000002/depth"))
     yolo_predictor = YoloPredictor(
                        exp_name="yolox-x",
                        config_file_path=osp.join(PROJ_ROOT,"configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
@@ -53,7 +54,7 @@ if __name__ == "__main__":
                      )
     gdrn_predictor = GdrnPredictor(
         config_file_path=osp.join(PROJ_ROOT,"configs/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo.py"),
-        ckpt_file_path=osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/model_final.pth"),
+        ckpt_file_path=osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/model_final_wo_optim.pth"),
         camera_json_path=osp.join(PROJ_ROOT,"datasets/BOP_DATASETS/lmo/camera.json"),
         path_to_obj_models=osp.join(PROJ_ROOT,"datasets/BOP_DATASETS/lmo/models")
     )
@@ -64,7 +65,49 @@ if __name__ == "__main__":
             depth_img = cv2.imread(depth_img, 0)
         outputs = yolo_predictor.inference(image=rgb_img)
         data_dict = gdrn_predictor.preprocessing(outputs=outputs, image=rgb_img, depth_img=depth_img)
+        # if the data directory does not exist, create it
+        if not os.path.exists(osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/gdrn_demo")):
+            os.makedirs(osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/gdrn_demo"))
+        # write the data dictionary to a csv file in the output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo directory using csv.DictWriter
+        with open(osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/gdrn_demo/data_dict.csv"), 'w') as f:
+            w = csv.writer(f)
+            # if a key has no value remove the key from the data dictionary 
+            for key in list(data_dict.keys()):
+                if len(data_dict[key]) == 0:
+                    del data_dict[key]
+            key_list = list(data_dict.keys())
+            limit = len(data_dict[key_list[0]].tolist())
+            w.writerow(data_dict.keys())
+            for i in range(limit):
+                # if the key has an no value, skip it
+                w.writerow([data_dict[x].tolist()[i] for x in key_list])
         out_dict = gdrn_predictor.inference(data_dict)
+        # write the dictionary to a csv file in the output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo directory using csv.DictWriter
+        with open(osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/gdrn_demo/output_dict.csv"), 'w') as f:
+            w = csv.writer(f)
+            # if a key has no value remove the key from the data dictionary 
+            for key in list(out_dict.keys()):
+                if len(out_dict[key]) == 0:
+                    del out_dict[key]
+            key_list = list(out_dict.keys())
+            limit = len(out_dict[key_list[0]].tolist())
+            w.writerow(out_dict.keys())
+            for i in range(limit):
+                # if the key has an no value, skip it
+                w.writerow([out_dict[x].tolist()[i] for x in key_list])
         poses = gdrn_predictor.postprocessing(data_dict, out_dict)
+        # write the poses to a csv file in the output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo directory using csv.DictWriter
+        with open(osp.join(PROJ_ROOT,"output/gdrn/lmo_pbr/convnext_a6_AugCosyAAEGray_BG05_mlL1_DMask_amodalClipBox_classAware_lmo/gdrn_demo/poses.csv"), 'w') as f:
+            w = csv.writer(f)
+            # if a key has no value remove the key from the data dictionary 
+            for key in list(poses.keys()):
+                if len(poses[key]) == 0:
+                    del poses[key]
+            key_list = list(poses.keys())
+            limit = len(poses[key_list[0]].tolist())
+            w.writerow(poses.keys())
+            for i in range(limit):
+                # if the key has an no value, skip it
+                w.writerow([poses[x].tolist()[i] for x in key_list]) 
         gdrn_predictor.gdrn_visualization(batch=data_dict, out_dict=out_dict, image=rgb_img)
 
