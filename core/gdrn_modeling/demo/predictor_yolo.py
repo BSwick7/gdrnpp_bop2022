@@ -1,5 +1,6 @@
 # the core predictor classes for gdrn
 import csv
+import glob
 import os
 import os.path as osp
 import sys
@@ -181,16 +182,23 @@ class YoloPredictor():
 
 
 if __name__ == "__main__":
+    dataset_name = "lmo"
+    if dataset_name == "hb":
+        shared_path = f"yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_{dataset_name}_pbr_{dataset_name}_test_primsense_bop19"
+    else:
+        shared_path = f"yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_{dataset_name}_pbr_{dataset_name}_bop_test"
+    config_file = f"configs/{shared_path}.py"
+    ckpt_file = f"output/{shared_path}/model_final.pth"
     predictor = YoloPredictor(
         exp_name="yolox-x",
         config_file_path=osp.join(
-            PROJ_ROOT, "configs/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test.py"),
+            PROJ_ROOT, config_file),
         ckpt_file_path=osp.join(
-            PROJ_ROOT, "output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/model_final.pth"),
+            PROJ_ROOT, ckpt_file),
         fuse=True,
         fp16=False
     )
-    rgb_path = "datasets/BOP_DATASETS/lmo/test/000002/rgb/000003.png"
+    rgb_path = f"datasets/BOP_DATASETS/{dataset_name}/test/000002/rgb/000003.png"
     img_path = osp.join(
         PROJ_ROOT, rgb_path)
     rgb_path_split = rgb_path.split('/')
@@ -198,10 +206,11 @@ if __name__ == "__main__":
     image_id = int(rgb_path_split[6].split('.')[0])
     img = cv2.imread(img_path)
     result = predictor.inference(img)
-    if not osp.exists(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4])):
+    predictor_output_dir = f"output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_{dataset_name}_pbr_{dataset_name}_bop_test/scenes/"
+    if not osp.exists(osp.join(PROJ_ROOT, predictor_output_dir + rgb_path_split[4])):
         os.makedirs(osp.join(
-            PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4]))
-    with open(osp.join(PROJ_ROOT, 'output/yolox/bop_pbr/yolox_x_640_augCozyAAEhsv_ranger_30_epochs_lmo_pbr_lmo_bop_test/scenes/' + rgb_path_split[4] + '/yolox_predictor_output_' + rgb_path_split[6].split('.')[0] + '.csv'), 'w') as csv_output_file:
+            PROJ_ROOT, predictor_output_dir + rgb_path_split[4]))
+    with open(osp.join(PROJ_ROOT, predictor_output_dir + rgb_path_split[4] + '/yolox_predictor_output_' + rgb_path_split[6].split('.')[0] + '.csv'), 'w') as csv_output_file:
         writer = csv.writer(csv_output_file)
         writer.writerow(['scene id', 'image id', 'x1', 'y1', 'x2', 'y2',
                         'object confidence', 'class confidence', 'object prediction'])
@@ -210,5 +219,12 @@ if __name__ == "__main__":
                 prediction_data = prediction_data.tolist()
                 prediction_data[:0] = [scene_id, image_id]
                 writer.writerow(prediction_data)
-    predictor.visual_yolo(result[0], img, ["cls_name_1", "cls_name_5", "cls_name_6", "cls_name_8",
-                                           "cls_name_9", "cls_name_10", "cls_name_11", "cls_name_12"])
+    # given the dataset name, create an array of class names with the {:06d} value from the obj_{:06d}.ply files in the datasets/BOP_DATASETS/{dataset_name}/models folder
+    obj_files = glob.glob(
+        f"datasets/BOP_DATASETS/{dataset_name}/models/obj_*.ply")
+    cls_names = []
+    for file in obj_files:
+        # find the value between obj_ and .ply
+        i = int(file.split('_')[1].split('.')[0])
+        cls_names.append(f"cls_name_{i}")
+    predictor.visual_yolo(result[0], img, cls_names)
