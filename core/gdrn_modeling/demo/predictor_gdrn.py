@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 import os.path as osp
@@ -75,14 +76,16 @@ class GdrnPredictor():
         self.objs_dir = path_to_obj_models
 
         # set your trained object names
-        self.objs = {1: 'class_name_1',
-                     5: 'class_name_5',
-                     6: 'class_name_6',
-                     8: 'class_name_8',
-                     9: 'class_name_9',
-                     10: 'class_name_10',
-                     11: 'class_name_11',
-                     12: 'class_name_12'}
+        # create a dictionary from the obj_{:06d}.ply files in the path to models folder where the key is the number between obj_ and .ply and the class name is class_name_{key}
+        obj_files = glob.glob(path_to_obj_models + "/obj_*.ply")
+        # sort the obj files by the object id
+        obj_files.sort(key=lambda x: int(
+            x.split("/")[-1].split("_")[1].split(".")[0]))
+        self.objs = {}
+        for obj_file in obj_files:
+            # retrieve the object id from the file name
+            obj_id = int(obj_file.split("/")[-1].split("_")[1].split(".")[0])
+            self.objs[obj_id] = "class_name_" + str(obj_id)
 
         self.cls_names = [i for i in self.objs.values()]
         self.obj_ids = [i for i in self.objs.keys()]
@@ -644,21 +647,24 @@ class GdrnPredictor():
 
             vis_dict[f"im_det_and_mask_full"] = img_vis_full_mask[:, :, ::-1]
 
-        for i, obj_id in enumerate(self.obj_ids):
-            R = batch["cur_res"][i]["R"]
-            t = batch["cur_res"][i]["t"]
-            # pose_est = np.hstack([R, t.reshape(3, 1)])
-            proj_pts_est = misc.project_pts(
-                self.obj_models[obj_id]["pts"], self.cam, R, t)
-            mask_pose_est = misc.points2d_to_mask(proj_pts_est, im_H, im_W)
-            image_mask_pose_est = vis_image_mask_cv2(
-                image, mask_pose_est, color="yellow" if i == 0 else "blue")
-            image_mask_pose_est = vis_image_bboxes_cv2(
-                image_mask_pose_est,
-                [batch["bbox_est"][i].detach().cpu().numpy()],
-                labels=[self.cls_names[i]]
-            )
-            vis_dict[f"im_{i}_mask_pose_est"] = image_mask_pose_est[:, :, ::-1]
+        for i in [int(i) for i in batch["inst_id"].detach().cpu().numpy()]:
+            # only add image mask to vis_dict if the score is greater than 0.7
+            if batch["cur_res"][i]["score"] > 0.7:
+                obj_id = int(batch["cur_res"][i]["obj_id"])
+                R = batch["cur_res"][i]["R"]
+                t = batch["cur_res"][i]["t"]
+                # pose_est = np.hstack([R, t.reshape(3, 1)])
+                proj_pts_est = misc.project_pts(
+                    self.obj_models[obj_id]["pts"], self.cam, R, t)
+                mask_pose_est = misc.points2d_to_mask(proj_pts_est, im_H, im_W)
+                image_mask_pose_est = vis_image_mask_cv2(
+                    image, mask_pose_est, color="yellow" if i == 0 else "blue")
+                image_mask_pose_est = vis_image_bboxes_cv2(
+                    image_mask_pose_est,
+                    [batch["bbox_est"][i].detach().cpu().numpy()],
+                    labels=[self.cls_names[i]]
+                )
+                vis_dict[f"im_{i}_mask_pose_est"] = image_mask_pose_est[:, :, ::-1]
         show_ims = np.hstack([cv2.cvtColor(_v, cv2.COLOR_BGR2RGB)
                              for _k, _v in vis_dict.items()])
         cv2.imshow('Main', show_ims)
